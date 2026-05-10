@@ -1,0 +1,4 @@
+settings.toml
+*.pyc
+.DS_Store
+Thumbs.db
