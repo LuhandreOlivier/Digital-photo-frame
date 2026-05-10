@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bible Verse Display — ESP32 Embedded Project</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@300;400;500&family=Lato:wght@300;400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:     #0A1628;
+      --navy-mid: #0F2040;
+      --navy-lt:  #162B50;
+      --gold:     #FFD700;
+      --gold-dim: #C9A800;
+      --white:    #F0EEE8;
+      --grey:     #8899AA;
+      --red:      #FF4444;
+      --green:    #44CC88;
+      --font-display: 'Playfair Display', Georgia, serif;
+      --font-mono:    'JetBrains Mono', 'Courier New', monospace;
+      --font-body:    'Lato', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--navy);
+      color: var(--white);
+      font-family: var(--font-body);
+      font-weight: 300;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.6;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 6rem 10vw;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: '';
+      position: absolute;
+      top: -30%;
+      right: -10%;
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(255,215,0,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.25em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.2s forwards;
+    }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.8rem, 7vw, 5.5rem);
+      font-weight: 700;
+      line-height: 1.08;
+      max-width: 16ch;
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.4s forwards;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--gold);
+    }
+
+    .hero-desc {
+      font-size: 1.05rem;
+      color: var(--grey);
+      max-width: 52ch;
+      margin-bottom: 3rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.6s forwards;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.8s forwards;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.8rem 1.8rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      border-radius: 3px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--gold);
+      color: var(--navy);
+      font-weight: 500;
+    }
+
+    .btn-primary:hover {
+      background: #fff;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(255,215,0,0.25);
+    }
+
+    .btn-secondary {
+      border: 1px solid rgba(255,215,0,0.4);
+      color: var(--gold);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--gold);
+      background: rgba(255,215,0,0.08);
+      transform: translateY(-2px);
+    }
+
+    /* ── Verse display mockup ── */
+    .device-mockup {
+      position: absolute;
+      right: 8vw;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 340px;
+      opacity: 0;
+      animation: fadeIn 1.2s ease 1s forwards;
+    }
+
+    .device-screen {
+      background: #0A1628;
+      border: 2px solid #1A3060;
+      border-radius: 6px;
+      padding: 2rem 1.5rem 1.5rem;
+      box-shadow:
+        0 0 0 6px #0D1F3C,
+        0 0 0 8px #0A1628,
+        0 40px 80px rgba(0,0,0,0.7),
+        inset 0 0 40px rgba(255,215,0,0.02);
+      position: relative;
+    }
+
+    .device-screen::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      opacity: 0.4;
+    }
+
+    .verse-text {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: #F0EEE8;
+      margin-bottom: 1.5rem;
+      font-weight: 400;
+    }
+
+    .verse-ref {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--gold);
+      text-align: right;
+      letter-spacing: 0.05em;
+    }
+
+    .device-label {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--grey);
+      margin-top: 1rem;
+      letter-spacing: 0.12em;
+    }
+
+    /* ── Sections ── */
+    section {
+      position: relative;
+      z-index: 1;
+      padding: 5rem 10vw;
+    }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.22em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      line-height: 1.15;
+    }
+
+    /* ── Architecture ── */
+    .arch-section {
+      background: var(--navy-mid);
+      border-top: 1px solid rgba(255,215,0,0.08);
+      border-bottom: 1px solid rgba(255,215,0,0.08);
+    }
+
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2.5rem;
+    }
+
+    .arch-card {
+      background: var(--navy);
+      border: 1px solid rgba(255,215,0,0.12);
+      border-radius: 6px;
+      padding: 1.75rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .arch-card:hover {
+      border-color: rgba(255,215,0,0.35);
+      transform: translateY(-3px);
+    }
+
+    .arch-card-icon {
+      font-size: 1.6rem;
+      margin-bottom: 1rem;
+    }
+
+    .arch-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      margin-bottom: 0.6rem;
+      color: var(--white);
+    }
+
+    .arch-card p {
+      font-size: 0.9rem;
+      color: var(--grey);
+      line-height: 1.65;
+    }
+
+    .arch-card .tag {
+      display: inline-block;
+      margin-top: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--gold);
+      border: 1px solid rgba(255,215,0,0.3);
+      border-radius: 2px;
+      padding: 0.2rem 0.5rem;
+    }
+
+    /* ── API Flow ── */
+    .api-flow {
+      margin-top: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      max-width: 680px;
+    }
+
+    .api-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.5rem;
+      padding: 1.5rem 0;
+      border-bottom: 1px solid rgba(255,215,0,0.08);
+      position: relative;
+    }
+
+    .api-step:last-child {
+      border-bottom: none;
+    }
+
+    .api-step-num {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--gold);
+      background: rgba(255,215,0,0.08);
+      border: 1px solid rgba(255,215,0,0.2);
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+    }
+
+    .api-step-content h4 {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--white);
+      margin-bottom: 0.35rem;
+    }
+
+    .api-step-content p {
+      font-size: 0.88rem;
+      color: var(--grey);
+    }
+
+    .api-step-content code {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--gold);
+      background: rgba(255,215,0,0.06);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    /* ── Hardware table ── */
+    .hw-section { background: var(--navy-mid); }
+
+    .hw-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 2.5rem;
+    }
+
+    @media (max-width: 700px) { .hw-grid { grid-template-columns: 1fr; } }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: var(--gold);
+      text-align: left;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid rgba(255,215,0,0.2);
+    }
+
+    td {
+      padding: 0.65rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      color: var(--grey);
+      vertical-align: top;
+    }
+
+    td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--white);
+      padding-right: 1.5rem;
+      white-space: nowrap;
+    }
+
+    /* ── Code block ── */
+    .code-section { background: var(--navy); }
+
+    pre {
+      background: #060E1C;
+      border: 1px solid rgba(255,215,0,0.12);
+      border-left: 3px solid var(--gold);
+      border-radius: 4px;
+      padding: 1.5rem;
+      overflow-x: auto;
+      margin-top: 2rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.7;
+      color: #A8C0D0;
+    }
+
+    .kw  { color: #FF7AA8; }
+    .fn  { color: #78DCCA; }
+    .st  { color: #B5E48C; }
+    .cm  { color: #556677; font-style: italic; }
+    .nu  { color: #FFD700; }
+
+    /* ── Lessons ── */
+    .lessons-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.2rem;
+      margin-top: 2.5rem;
+    }
+
+    .lesson {
+      padding: 1.5rem;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+      background: var(--navy-mid);
+    }
+
+    .lesson-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: var(--gold);
+      margin-bottom: 0.5rem;
+    }
+
+    .lesson p {
+      font-size: 0.88rem;
+      color: var(--grey);
+      line-height: 1.6;
+    }
+
+    /* ── Footer ── */
+    footer {
+      padding: 3rem 10vw;
+      border-top: 1px solid rgba(255,215,0,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--grey);
+    }
+
+    footer a {
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .device-mockup { display: none; }
+      .hero { padding: 5rem 6vw; }
+      section { padding: 4rem 6vw; }
+    }
+
+    @media (max-width: 600px) {
+      .hero { padding: 4rem 1.5rem 3rem; }
+      section { padding: 3rem 1.5rem; }
+      footer { padding: 2rem 1.5rem; flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <p class="hero-label">Embedded Systems · CircuitPython · ESP32-S2</p>
+  <h1>Bible Verse <em>Display</em> Device</h1>
+  <p class="hero-desc">
+    A handcrafted embedded device that fetches the YouVersion Verse of the Day over WiFi
+    and renders it on a 2.4&quot; TFT display. Built as a birthday gift. Engineered with care.
+  </p>
+  <div class="hero-buttons">
+    <a href="https://github.com/yourusername/bible-display" class="btn btn-primary" target="_blank">View on GitHub</a>
+    <a href="#architecture" class="btn btn-secondary">Explore the Build</a>
+  </div>
+
+  <!-- Device mockup -->
+  <div class="device-mockup">
+    <div class="device-screen">
+      <p class="verse-text">
+        For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you, plans to give you hope and a future.
+      </p>
+      <p class="verse-ref">— Jeremiah 29:11 (NIV)</p>
+    </div>
+    <p class="device-label">LOLIN S2 MINI · ILI9341 · 320×240</p>
+  </div>
+</section>
+
+<!-- ── Architecture ──────────────────────────────────────────────────────────── -->
+<section class="arch-section" id="architecture">
+  <p class="section-label">System Design</p>
+  <h2>What's Under the Hood</h2>
+  <p style="color:var(--grey); max-width:62ch; font-size:0.95rem;">
+    A complete embedded stack — from hardware SPI bus management to HTTPS API calls
+    on a microcontroller with 320KB of SRAM.
+  </p>
+
+  <div class="arch-grid">
+    <div class="arch-card">
+      <div class="arch-card-icon">📡</div>
+      <h3>Dual-API Architecture</h3>
+      <p>YouVersion provides the curated daily verse reference. The Scripture API resolves it into readable text. Two HTTPS calls, one verse, zero configuration needed after setup.</p>
+      <span class="tag">HTTPS · SSL · JSON</span>
+    </div>
+    <div class="arch-card">
+      <div class="arch-card-icon">🔌</div>
+      <h3>Shared SPI Bus</h3>
+      <p>The ILI9341 display and SD card reader share one SPI bus with dedicated chip select lines. Images are loaded into a RAM framebuffer before the SD card is unmounted — eliminating bus conflicts.</p>
+      <span class="tag">SPI · CS Management</span>
+    </div>
+    <div class="arch-card">
+      <div class="arch-card-icon">🖼️</div>
+      <h3>RGB565 Framebuffer</h3>
+      <p>BMP images are decoded manually from raw bytes, converted to RGB565 format, and pushed to the display in horizontal strips — bypassing displayio entirely for reliable, full-colour output.</p>
+      <span class="tag">BMP Parsing · 16-bit Colour</span>
+    </div>
+    <div class="arch-card">
+      <div class="arch-card-icon">💾</div>
+      <h3>Memory Management</h3>
+      <p>The ESP32-S2 has 320KB SRAM plus 2MB PSRAM. Explicit gc.collect() calls, response object cleanup, and careful buffer sizing keep the device stable across long uptime periods.</p>
+      <span class="tag">CircuitPython · gc</span>
+    </div>
+    <div class="arch-card">
+      <div class="arch-card-icon">🔁</div>
+      <h3>Resilient Networking</h3>
+      <p>WiFi reconnects with exponential backoff. API calls retry up to three times with increasing delays. Three consecutive failures trigger a full WiFi reconnect cycle before falling back to a soft reboot.</p>
+      <span class="tag">Retry Logic · supervisor.reload</span>
+    </div>
+    <div class="arch-card">
+      <div class="arch-card-icon">🌅</div>
+      <h3>PWM Backlight</h3>
+      <p>The display backlight is off during boot and loading, then fades in smoothly once content is ready. The slideshow fades out and back in between images for a polished visual transition.</p>
+      <span class="tag">PWM · UX Polish</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── API Flow ───────────────────────────────────────────────────────────────── -->
+<section>
+  <p class="section-label">API Design</p>
+  <h2>Why Two APIs?</h2>
+  <p style="color:var(--grey); max-width:60ch; font-size:0.95rem; margin-bottom:0;">
+    YouVersion's developer API returns the verse reference for each calendar day — not the text.
+    A second call to the Scripture API resolves it. Here's the full request chain:
+  </p>
+
+  <div class="api-flow">
+    <div class="api-step">
+      <div class="api-step-num">1</div>
+      <div class="api-step-content">
+        <h4>Device boots and connects to WiFi</h4>
+        <p>Exponential backoff retry up to 5 attempts. On failure, the device waits and retries rather than crashing.</p>
+      </div>
+    </div>
+    <div class="api-step">
+      <div class="api-step-num">2</div>
+      <div class="api-step-content">
+        <h4>GET YouVersion Verse of the Day</h4>
+        <p><code>api.youversion.com/v1/verse_of_the_days/{day_of_year}</code></p>
+        <p>Returns a passage identifier — e.g. <code>JHN.3.16</code> — for today's curated verse.</p>
+      </div>
+    </div>
+    <div class="api-step">
+      <div class="api-step-num">3</div>
+      <div class="api-step-content">
+        <h4>GET verse text from Scripture API</h4>
+        <p><code>rest.api.bible/v1/bibles/{bible_id}/verses/JHN.3.16</code></p>
+        <p>Returns plain text content and a human-readable reference string.</p>
+      </div>
+    </div>
+    <div class="api-step">
+      <div class="api-step-num">4</div>
+      <div class="api-step-content">
+        <h4>Render and display</h4>
+        <p>Text is word-wrapped to fit the screen, drawn in white on a navy background, with the reference in gold. The display refreshes once per day at midnight.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Hardware ───────────────────────────────────────────────────────────────── -->
+<section class="hw-section" id="hardware">
+  <p class="section-label">Hardware</p>
+  <h2>Components &amp; Wiring</h2>
+
+  <div class="hw-grid">
+    <div>
+      <table>
+        <thead>
+          <tr><th>Component</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>MCU</td><td>LOLIN S2 Mini (ESP32-S2)</td></tr>
+          <tr><td>CPU</td><td>Xtensa LX7 @ 240MHz</td></tr>
+          <tr><td>RAM</td><td>320KB SRAM + 2MB PSRAM</td></tr>
+          <tr><td>Flash</td><td>4MB</td></tr>
+          <tr><td>WiFi</td><td>802.11 b/g/n, 2.4GHz</td></tr>
+          <tr><td>Display</td><td>2.4" ILI9341 SPI TFT</td></tr>
+          <tr><td>Resolution</td><td>320 × 240 pixels</td></tr>
+          <tr><td>SD Card</td><td>SPI module, 3.3V native</td></tr>
+          <tr><td>Firmware</td><td>CircuitPython 10.x</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <table>
+        <thead>
+          <tr><th>S2 Mini Pin</th><th>Connects To</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>IO7</td><td>CLK (shared)</td></tr>
+          <tr><td>IO11</td><td>MOSI (shared)</td></tr>
+          <tr><td>IO9</td><td>MISO (SD only)</td></tr>
+          <tr><td>IO12</td><td>Display CS</td></tr>
+          <tr><td>IO6</td><td>SD Card CS</td></tr>
+          <tr><td>IO5</td><td>Display DC</td></tr>
+          <tr><td>IO1</td><td>Display RST</td></tr>
+          <tr><td>IO3</td><td>Backlight (PWM)</td></tr>
+          <tr><td>3.3V</td><td>Display VCC, SD VCC</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ── Code Highlight ─────────────────────────────────────────────────────────── -->
+<section class="code-section" id="code">
+  <p class="section-label">Implementation</p>
+  <h2>Key Design Decisions</h2>
+  <p style="color:var(--grey); max-width:60ch; font-size:0.95rem;">
+    Loading BMP images from an SD card onto a shared SPI bus is the core technical
+    challenge of this project. The solution: decode the BMP into RAM first, then render.
+  </p>
+
+<pre><span class="cm"># The naive approach — causes a bus conflict on shared SPI:</span>
+<span class="cm"># bitmap = displayio.OnDiskBitmap(f)  ← reads SD during display refresh</span>
+
+<span class="cm"># The correct approach — separate load from render:</span>
+
+<span class="kw">def</span> <span class="fn">load_bmp_to_rgb565_framebuffer</span>(path, rotation=<span class="nu">0</span>):
+    <span class="cm">"""Decode a 24-bit BMP into an RGB565 bytearray in RAM."""</span>
+    gc.collect()
+
+    <span class="kw">with</span> <span class="fn">open</span>(path, <span class="st">"rb"</span>) <span class="kw">as</span> f:
+        header   = f.read(<span class="nu">54</span>)
+        bmp_w    = read_le32(header, <span class="nu">18</span>)
+        bmp_h    = read_le32(header, <span class="nu">22</span>)
+        fb       = bytearray(DISPLAY_WIDTH * DISPLAY_HEIGHT * <span class="nu">2</span>)
+        row_size = ((bmp_w * <span class="nu">3</span> + <span class="nu">3</span>) // <span class="nu">4</span>) * <span class="nu">4</span>
+
+        <span class="kw">for</span> row <span class="kw">in</span> <span class="fn">range</span>(bmp_h):
+            f.seek(pixel_offset + row * row_size)
+            f.readinto(row_buf)
+
+            <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(bmp_w):
+                b, g, r  = row_buf[x*<span class="nu">3</span>], row_buf[x*<span class="nu">3</span>+<span class="nu">1</span>], row_buf[x*<span class="nu">3</span>+<span class="nu">2</span>]
+                dx, dy   = map_rotated_pixel(x, y, bmp_w, bmp_h, rotation)
+                idx      = (dy * DISPLAY_WIDTH + dx) * <span class="nu">2</span>
+                fb[idx], fb[idx+<span class="nu">1</span>] = rgb888_to_rgb565_bytes(r, g, b)
+
+    <span class="kw">return</span> fb  <span class="cm"># SD card can now be safely unmounted</span>
+
+
+<span class="kw">def</span> <span class="fn">show_image</span>(path):
+    new_fb = load_bmp_to_rgb565_framebuffer(path, IMAGE_ROTATION)
+    <span class="fn">unmount_sd</span>()          <span class="cm"># release SPI bus</span>
+    <span class="fn">fade_out</span>()
+    <span class="fn">draw_framebuffer</span>(new_fb)  <span class="cm"># push directly to ILI9341</span>
+    <span class="fn">fade_in</span>()</pre>
+</section>
+
+<!-- ── Lessons Learned ────────────────────────────────────────────────────────── -->
+<section>
+  <p class="section-label">Takeaways</p>
+  <h2>What This Project Taught Me</h2>
+
+  <div class="lessons-grid">
+    <div class="lesson">
+      <p class="lesson-title">SPI BUS ARBITRATION</p>
+      <p>Two devices on one bus need careful sequencing. The solution here — load to RAM, release bus, render — is a pattern applicable to any shared-resource embedded design.</p>
+    </div>
+    <div class="lesson">
+      <p class="lesson-title">MEMORY ON MICROCONTROLLERS</p>
+      <p>With 320KB of SRAM, every allocation matters. Explicit gc.collect(), closing HTTP responses immediately, and avoiding string concatenation all make a measurable difference.</p>
+    </div>
+    <div class="lesson">
+      <p class="lesson-title">RESILIENT NETWORKING</p>
+      <p>WiFi on embedded devices is never guaranteed. Exponential backoff, connection pooling, and supervisor.reload() as a last resort made this device reliable in daily use.</p>
+    </div>
+    <div class="lesson">
+      <p class="lesson-title">API DESIGN CONSTRAINTS</p>
+      <p>YouVersion's API returns a reference, not text — requiring a second API call. Understanding this separation led to a cleaner two-API architecture than a single monolithic call would have.</p>
+    </div>
+    <div class="lesson">
+      <p class="lesson-title">DISPLAY RENDERING</p>
+      <p>Bypassing displayio's OnDiskBitmap and writing raw RGB565 data directly to the ILI9341 via SPI gave full colour fidelity and complete control over the render pipeline.</p>
+    </div>
+    <div class="lesson">
+      <p class="lesson-title">UX ON EMBEDDED</p>
+      <p>Small touches matter — a fade-in backlight, a status message during boot, gold text for the reference. These details are what separates a working prototype from a finished product.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────────────────────────── -->
+<footer>
+  <span>Bible Verse Display — ESP32-S2 + CircuitPython</span>
+  <span>
+    <a href="https://github.com/yourusername/bible-display" target="_blank">GitHub</a>
+    &nbsp;·&nbsp;
+    <a href="docs/hardware.md">Hardware Guide</a>
+    &nbsp;·&nbsp;
+    <a href="docs/api.md">API Setup</a>
+  </span>
+</footer>
+
+</body>
+</html>
