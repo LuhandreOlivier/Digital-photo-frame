@@ -1,0 +1,4 @@
+WIFI_SSID = "YourWiFiName"
+WIFI_PASSWORD = "YourWiFiPassword"
+YOUVERSION_APP_KEY = "your-youversion-key"
+SCRIPTURE_API_KEY = "your-scripture-key"
